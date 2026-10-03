@@ -261,6 +261,134 @@ describe('CronExpression', () => {
     });
   });
 
+  describe('schedule bounds validation with milliseconds in current date', () => {
+    test('next should return a tick that equals endDate when current date carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:09.151Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.next().toISOString()).toBe('2024-01-01T09:00:10.000Z');
+    });
+
+    test('next with milliseconds in current date should match the result without milliseconds', () => {
+      const withMilliseconds = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:09.151Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+      const withoutMilliseconds = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:09.000Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(withMilliseconds.next().toISOString()).toBe(withoutMilliseconds.next().toISOString());
+    });
+
+    test('next should throw when the only remaining tick is past endDate even with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:10.151Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(() => interval.next()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('hasNext should agree with next when the next tick equals endDate and current date carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:09.151Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.hasNext()).toBe(true);
+      expect(() => interval.next()).not.toThrow();
+    });
+
+    test('hasNext should agree with next when no tick remains before endDate with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:10.151Z',
+        endDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.hasNext()).toBe(false);
+      expect(() => interval.next()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('prev should return a tick that equals startDate when a reverse step lands on it with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('10 * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:12.151Z',
+        startDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.prev().toISOString()).toBe('2024-01-01T09:00:10.000Z');
+    });
+
+    test('prev should throw when the only remaining tick is before startDate with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('*/30 * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:15.151Z',
+        startDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(() => interval.prev()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('hasPrev should agree with prev when the reverse step lands on startDate and current date carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('10 * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:12.151Z',
+        startDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.hasPrev()).toBe(true);
+      expect(() => interval.prev()).not.toThrow();
+    });
+
+    test('hasPrev should agree with prev when no tick remains after startDate with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('*/30 * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:15.151Z',
+        startDate: '2024-01-01T09:00:10.000Z',
+      });
+
+      expect(interval.hasPrev()).toBe(false);
+      expect(() => interval.prev()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('next of a minute-level expression should return a tick equal to endDate with milliseconds in current date', () => {
+      const interval = CronExpressionParser.parse('0 * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:58:30.151Z',
+        endDate: '2024-01-01T10:00:00.000Z',
+      });
+
+      expect(interval.next().toISOString()).toBe('2024-01-01T10:00:00.000Z');
+    });
+
+    test('iterated ticks should always have their milliseconds set to 0 when current date carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        tz: 'UTC',
+        currentDate: '2024-01-01T09:00:09.151Z',
+        endDate: '2024-01-01T09:00:12.000Z',
+      });
+
+      for (const expected of [
+        '2024-01-01T09:00:10.000Z',
+        '2024-01-01T09:00:11.000Z',
+        '2024-01-01T09:00:12.000Z',
+      ]) {
+        expect(interval.next().toISOString()).toBe(expected);
+      }
+      expect(interval.hasNext()).toBe(false);
+    });
+  });
+
   describe('stringify', () => {
     test('stringify cron expression all stars no seconds 0 * * * * *', () => {
       const expected = '0 * * * * *';

@@ -496,7 +496,11 @@ export class CronExpression {
       return;
     }
 
-    const currentTime = currentDate.getTime();
+    // Bounds are inclusive and schedule ticks always land on whole seconds, so compare on the
+    // truncated second. Otherwise a seed carrying milliseconds (e.g. ...09.151) makes the one-second
+    // step land on ...10.151, which looks past an endDate of ...10.000 even though the schedule tick
+    // ...10.000 equals the bound and must be returned.
+    const currentTime = currentDate.getTime() - currentDate.getMilliseconds();
     if (this.#startDate && currentTime < this.#startDate.getTime()) {
       throw new Error(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
     }
