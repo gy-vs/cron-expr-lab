@@ -1131,6 +1131,148 @@ describe('CronExpressionParser', () => {
     });
   });
 
+  describe('sub-second currentDate handling (millisecond precision)', () => {
+    test('next returns the occurrence equal to endDate when currentDate carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+        endDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC',
+      });
+
+      expect(interval.hasNext()).toBe(true);
+      expect(interval.next().toISOString()).toBe('2024-01-01T09:00:10.000Z');
+    });
+
+    test('next with a sub-second start behaves like starting from its whole second', () => {
+      const options = {
+        endDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC' as const,
+      };
+
+      const withMilliseconds = CronExpressionParser.parse('* * * * * *', {
+        ...options,
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+      });
+      const withoutMilliseconds = CronExpressionParser.parse('* * * * * *', {
+        ...options,
+        currentDate: new Date('2024-01-01T09:00:09.000Z'),
+      });
+
+      expect(withMilliseconds.next().toISOString()).toBe(withoutMilliseconds.next().toISOString());
+    });
+
+    test('next still throws when the occurrence equal to endDate is the previous second', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+        endDate: new Date('2024-01-01T09:00:09.000Z'),
+        tz: 'UTC',
+      });
+
+      expect(interval.hasNext()).toBe(false);
+      expect(() => interval.next()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('prev returns the occurrence equal to startDate when currentDate carries milliseconds', () => {
+      const interval = CronExpressionParser.parse('* * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:10.151Z'),
+        startDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC',
+      });
+
+      expect(interval.hasPrev()).toBe(true);
+      expect(interval.prev().toISOString()).toBe('2024-01-01T09:00:10.000Z');
+    });
+
+    test('prev with a sub-second start treats the current whole second as the reference point', () => {
+      // At 09:00:10.151 the floor second 09:00:10 is still "now", so the previous
+      // occurrence is the same one found when starting at 09:00:11.000.
+      const withMilliseconds = CronExpressionParser.parse('*/5 * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:12.345Z'),
+        tz: 'UTC',
+      });
+      const fromNextWholeSecond = CronExpressionParser.parse('*/5 * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:13.000Z'),
+        tz: 'UTC',
+      });
+
+      expect(withMilliseconds.prev().toISOString()).toBe(fromNextWholeSecond.prev().toISOString());
+    });
+
+    test('prev throws when the floored whole second is already before startDate', () => {
+      // The only previous occurrence is 09:00:00 but startDate is 09:00:10.
+      const interval = CronExpressionParser.parse('0 * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:10.151Z'),
+        startDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC',
+      });
+
+      expect(interval.hasPrev()).toBe(false);
+      expect(() => interval.prev()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('hasNext and hasPrev agree with next and prev around a sub-second boundary', () => {
+      const nextInterval = CronExpressionParser.parse('* * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+        endDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC',
+      });
+      expect(nextInterval.hasNext()).toBe(true);
+      nextInterval.next();
+      expect(nextInterval.hasNext()).toBe(false);
+      expect(() => nextInterval.next()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+
+      const prevInterval = CronExpressionParser.parse('* * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:10.151Z'),
+        startDate: new Date('2024-01-01T09:00:10.000Z'),
+        tz: 'UTC',
+      });
+      expect(prevInterval.hasPrev()).toBe(true);
+      prevInterval.prev();
+      expect(prevInterval.hasPrev()).toBe(false);
+      expect(() => prevInterval.prev()).toThrow(TIME_SPAN_OUT_OF_BOUNDS_ERROR_MESSAGE);
+    });
+
+    test('iterated dates always have a zero millisecond component from a sub-second start', () => {
+      const interval = CronExpressionParser.parse('*/10 * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+        tz: 'UTC',
+      });
+
+      for (const date of interval.take(5)) {
+        expect(date.getMilliseconds()).toBe(0);
+      }
+
+      const reverse = CronExpressionParser.parse('*/10 * * * * *', {
+        currentDate: new Date('2024-01-01T09:00:59.999Z'),
+        tz: 'UTC',
+      });
+
+      for (const date of reverse.take(-5)) {
+        expect(date.getMilliseconds()).toBe(0);
+      }
+    });
+
+    test('minute-level expressions behave the same with and without milliseconds', () => {
+      const options = {
+        endDate: new Date('2024-01-01T09:01:00.000Z'),
+        tz: 'UTC' as const,
+      };
+
+      const withMilliseconds = CronExpressionParser.parse('* * * * *', {
+        ...options,
+        currentDate: new Date('2024-01-01T09:00:09.151Z'),
+      });
+      const withoutMilliseconds = CronExpressionParser.parse('* * * * *', {
+        ...options,
+        currentDate: new Date('2024-01-01T09:00:09.000Z'),
+      });
+
+      expect(withMilliseconds.hasNext()).toBe(true);
+      expect(withMilliseconds.next().toISOString()).toBe('2024-01-01T09:01:00.000Z');
+      expect(withoutMilliseconds.next().toISOString()).toBe('2024-01-01T09:01:00.000Z');
+    });
+  });
+
   describe('timezones and DST tests', () => {
     test('It works on DST start', () => {
       const options: CronExpressionOptions = {

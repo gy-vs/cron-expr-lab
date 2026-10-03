@@ -516,6 +516,21 @@ export class CronExpression {
     const dateMathVerb: DateMathOp = reverse ? DateMathOp.Subtract : DateMathOp.Add;
     const currentDate = new CronDate(this.#currentDate);
     const startTimestamp = currentDate.getTime();
+
+    // Cron schedules have whole-second resolution. Normalize a starting point that carries
+    // milliseconds to the preceding whole second before the loop starts, so the search proceeds
+    // exactly as if it had begun on that whole-second date. A forward search beginning on that
+    // whole second would immediately step past it, so do the same here. Performing this step up
+    // front also ensures the first time-span validation runs against an in-range candidate: when
+    // the next occurrence equals endDate, the intermediate sub-second date would otherwise
+    // overshoot the boundary and trigger a premature "Out of the time span range" error.
+    if (currentDate.getMilliseconds() > 0) {
+      currentDate.setMilliseconds(0);
+      if (!reverse) {
+        currentDate.applyDateOperation(DateMathOp.Add, TimeUnit.Second, this.#fields.hour.values.length);
+      }
+    }
+
     let stepCount = 0;
 
     while (++stepCount < LOOP_LIMIT) {
@@ -548,9 +563,7 @@ export class CronExpression {
       }
 
       if (startTimestamp === currentDate.getTime()) {
-        if (dateMathVerb === 'Add' || currentDate.getMilliseconds() === 0) {
-          currentDate.applyDateOperation(dateMathVerb, TimeUnit.Second, this.#fields.hour.values.length);
-        }
+        currentDate.applyDateOperation(dateMathVerb, TimeUnit.Second, this.#fields.hour.values.length);
         continue;
       }
       break;
@@ -561,9 +574,6 @@ export class CronExpression {
       throw new Error(LOOPS_LIMIT_EXCEEDED_ERROR_MESSAGE);
     }
 
-    if (currentDate.getMilliseconds() !== 0) {
-      currentDate.setMilliseconds(0);
-    }
     this.#currentDate = currentDate;
     return currentDate;
   }
